@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { useDispatch } from 'react-redux'
+import { Upload, X, FileText, CheckCircle2, Loader2 } from 'lucide-react'
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { addInvoice, setError } from '../store/slices/invoicesSlice'
 import { addProduct } from '../store/slices/productsSlice'
 import { addCustomer } from '../store/slices/customersSlice'
 import * as XLSX from 'xlsx'
+import { cn } from '@/lib/utils'
 
 // Initialize Google Gemini API
 const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY)
@@ -12,6 +16,9 @@ const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY)
 const FileUpload = () => {
   const dispatch = useDispatch()
   const [loading, setLoading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
+  const [currentFile, setCurrentFile] = useState(null)
+  const [progress, setProgress] = useState(0)
 
   const convertExcelToCSV = (file) => {
     return new Promise((resolve, reject) => {
@@ -278,13 +285,52 @@ const FileUpload = () => {
     }
   }
 
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0]
-    if (!file) return
+  const handleDragOver = (e) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }
 
+  const handleDragLeave = () => {
+    setIsDragging(false)
+  }
+
+  const handleDrop = async (e) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files[0]
+    if (file) {
+      await handleFile(file)
+    }
+  }
+
+  const handleFileInput = async (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      await handleFile(file)
+    }
+  }
+
+  const handleFile = async (file) => {
+    setCurrentFile(file)
     setLoading(true)
+    setProgress(0)
+    
     try {
+      // Simulate progress while processing
+      const progressInterval = setInterval(() => {
+        setProgress(prev => Math.min(prev + 10, 90))
+      }, 500)
+
       await processFile(file)
+      
+      clearInterval(progressInterval)
+      setProgress(100)
+      
+      // Reset after success
+      setTimeout(() => {
+        setProgress(0)
+        setCurrentFile(null)
+      }, 2000)
     } catch (error) {
       console.error('Error processing file:', error)
       dispatch(setError(error.message))
@@ -293,15 +339,87 @@ const FileUpload = () => {
     }
   }
 
+  const removeFile = () => {
+    setCurrentFile(null)
+    setProgress(0)
+  }
+
   return (
-    <div>
-      <input
-        type="file"
-        accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.csv"
-        onChange={handleFileUpload}
-        disabled={loading}
-      />
-      {loading && <div>Processing file...</div>}
+    <div className="space-y-4">
+      {/* Drop Zone */}
+      <div
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className={cn(
+          "border-2 border-dashed rounded-lg p-8 text-center transition-colors",
+          isDragging ? "border-primary bg-primary/5" : "border-gray-200",
+          "hover:border-primary hover:bg-primary/5"
+        )}
+      >
+        <input
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.xlsx,.xls,.csv"
+          onChange={handleFileInput}
+          className="hidden"
+          id="file-upload"
+          disabled={loading}
+        />
+        <label 
+          htmlFor="file-upload"
+          className="flex flex-col items-center gap-2 cursor-pointer"
+        >
+          <Upload className="h-10 w-10 text-gray-400" />
+          <div className="text-sm text-gray-600">
+            <span className="font-semibold text-primary">Click to upload</span> or drag and drop
+          </div>
+          <p className="text-xs text-gray-500">
+            PDF, Images, Excel files, or CSV
+          </p>
+        </label>
+      </div>
+
+      {/* Current File */}
+      {currentFile && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-gray-400" />
+              <span className="text-sm text-gray-600">{currentFile.name}</span>
+            </div>
+            {!loading && (
+              <Button
+                size="icon"
+                onClick={removeFile}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Processing Status */}
+      {loading && (
+        <div className="space-y-2">
+          <Progress value={progress} />
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <span className="flex items-center gap-2">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Processing file...
+            </span>
+            <span>{Math.round(progress)}%</span>
+          </div>
+        </div>
+      )}
+
+      {/* Success Message */}
+      {progress === 100 && (
+        <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 p-3 rounded-md">
+          <CheckCircle2 className="h-4 w-4" />
+          File processed successfully!
+        </div>
+      )}
     </div>
   )
 }
